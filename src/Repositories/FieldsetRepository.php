@@ -3,6 +3,7 @@
 namespace Tdwesten\StatamicBuilder\Repositories;
 
 use Illuminate\Support\Collection;
+use Statamic\Facades\Blink;
 use Statamic\Fields\Fieldset as StatamicFieldset;
 use Statamic\Fields\FieldsetRepository as FieldsFieldsetRepository;
 use Tdwesten\StatamicBuilder\Fieldset;
@@ -17,35 +18,20 @@ class FieldsetRepository extends FieldsFieldsetRepository
             return parent::find($handle);
         }
 
-        return $this
-            ->make($handle)
-            ->initialPath(resource_path('fieldsets'))
-            ->setContents($builderFieldset->fieldsetToArray());
+        return $this->createFieldset($builderFieldset);
     }
 
     public function findFieldset(string $handle): ?Fieldset
     {
-        $registeredFieldsets = config('statamic.builder.fieldsets', []);
+        $map = $this->getHandleToClassMap();
 
-        $fieldset = collect($registeredFieldsets)
-            ->filter(function ($fieldsetClassName) use ($handle) {
-                if (empty($fieldsetClassName)) {
-                    return false;
-                }
-
-                if (! class_exists($fieldsetClassName)) {
-                    return false;
-                }
-
-                return (new $fieldsetClassName)->getSlug() === $handle;
-            })
-            ->first();
-
-        if (! $fieldset) {
+        if (! isset($map[$handle])) {
             return null;
         }
 
-        return new $fieldset;
+        $fieldsetClassName = $map[$handle];
+
+        return new $fieldsetClassName;
     }
 
     public function all(): Collection
@@ -53,14 +39,14 @@ class FieldsetRepository extends FieldsFieldsetRepository
         return collect([
             ...$this->getStandardFieldsets(),
             ...$this->getNamespacedFieldsets(),
-            ...array_map(function ($fieldset) {
-                $fieldset = new $fieldset;
+            ...collect($this->getHandleToClassMap())
+                ->map(function (string $fieldsetClassName) {
+                    $fieldset = new $fieldsetClassName;
 
-                return $this
-                    ->make($fieldset->getSlug())
-                    ->initialPath(resource_path('fieldsets'))
-                    ->setContents($fieldset->fieldsetToArray());
-            }, config('statamic.builder.fieldsets', [])),
+                    return $this->createFieldset($fieldset);
+                })
+                ->values()
+                ->all(),
         ]);
     }
 
@@ -72,5 +58,31 @@ class FieldsetRepository extends FieldsFieldsetRepository
         }
 
         parent::save($fieldset);
+    }
+
+    private function getHandleToClassMap(): array
+    {
+        return Blink::store('statamic-builder')->once('fieldsets', function () {
+            return collect(config('statamic.builder.fieldsets', []))
+                ->mapWithKeys(function ($fieldsetClassName) {
+                    if (empty($fieldsetClassName) || ! class_exists($fieldsetClassName)) {
+                        return [];
+                    }
+
+                    $instance = new $fieldsetClassName;
+
+                    return [$instance->getSlug() => $fieldsetClassName];
+                })
+                ->filter()
+                ->all();
+        });
+    }
+
+    private function createFieldset(Fieldset $fieldset): StatamicFieldset
+    {
+        return $this
+            ->make($fieldset->getSlug())
+            ->initialPath(resource_path('fieldsets'))
+            ->setContents($fieldset->fieldsetToArray());
     }
 }
