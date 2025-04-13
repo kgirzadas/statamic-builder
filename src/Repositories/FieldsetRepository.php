@@ -35,7 +35,6 @@ class FieldsetRepository extends FieldsFieldsetRepository
         return new $fieldsetClassName;
     }
 
-
     private function getHandleToClassMap(): array
     {
         if ($this->handleToClassMap !== null) {
@@ -47,7 +46,6 @@ class FieldsetRepository extends FieldsFieldsetRepository
                 if (empty($fieldsetClassName) || ! class_exists($fieldsetClassName)) {
                     return [];
                 }
-
 
                 $instance = new $fieldsetClassName;
 
@@ -67,6 +65,7 @@ class FieldsetRepository extends FieldsFieldsetRepository
             ...collect($this->getHandleToClassMap())
                 ->map(function (string $fieldsetClassName) {
                     $fieldset = new $fieldsetClassName;
+
                     return $this->createFieldset($fieldset);
                 })
                 ->values()
